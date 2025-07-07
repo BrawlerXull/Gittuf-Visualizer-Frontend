@@ -19,6 +19,10 @@ import "reactflow/dist/style.css"
 import dagre from "dagre"
 import { CollapsibleCard } from "./collapsible-card"
 import { motion } from "framer-motion"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Badge } from "@/components/ui/badge"
+import { formatJsonValue, getNodeTypeDescription } from "@/lib/json-utils"
+import { shouldShowInNormalMode, type ViewMode } from "@/lib/view-mode-utils"
 
 // Node dimensions for layout
 const NODE_WIDTH = 220
@@ -33,30 +37,83 @@ const AnimatedNode = ({ children }: { children: React.ReactNode }) => {
   )
 }
 
+// Node tooltip wrapper
+const NodeTooltip = ({ children, data, type }: { children: React.ReactNode; data: any; type: string }) => {
+  return (
+    <TooltipProvider>
+      <Tooltip delayDuration={300}>
+        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        <TooltipContent side="right" className="max-w-md p-0 overflow-hidden">
+          <div className="bg-white rounded-md shadow-lg border border-slate-200">
+            <div className="bg-slate-50 p-2 border-b border-slate-200">
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-sm text-slate-700">
+                  {data.label || (type === "rootNode" ? "Root" : "Node")}
+                </span>
+                <Badge variant="outline" className="bg-slate-100 text-xs">
+                  {getNodeTypeDescription(type)}
+                </Badge>
+              </div>
+            </div>
+            <div className="p-3 space-y-2">
+              {data.path && (
+                <div>
+                  <span className="text-xs font-medium text-slate-500">Path:</span>
+                  <code className="ml-2 text-xs bg-slate-50 px-1 py-0.5 rounded">{data.path}</code>
+                </div>
+              )}
+              <div>
+                <span className="text-xs font-medium text-slate-500">Value:</span>
+                <div className="mt-1 text-xs bg-slate-50 p-2 rounded border border-slate-200 max-h-[200px] overflow-auto">
+                  <pre className="whitespace-pre-wrap break-all">{formatJsonValue(data.value)}</pre>
+                </div>
+              </div>
+              {data.metadata && Object.keys(data.metadata).length > 0 && (
+                <div>
+                  <span className="text-xs font-medium text-slate-500">Metadata:</span>
+                  <div className="mt-1 grid grid-cols-2 gap-1">
+                    {Object.entries(data.metadata).map(([key, value]) => (
+                      <div key={key} className="text-xs">
+                        <span className="font-medium">{key}:</span> {String(value)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
 // Node types
 function RootNode({ data, isConnectable }: any) {
   return (
     <AnimatedNode>
-      <div className="w-[220px]">
-        <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} />
-        <CollapsibleCard
-          title="Root"
-          isOpen={true}
-          borderColor="border-blue-500"
-          onToggle={data.onToggle}
-          isExpanded={data.isExpanded}
-        >
-          <div className="text-xs">
-            {typeof data.value === "object" && data.value !== null
-              ? `Object with ${Object.keys(data.value).length} properties`
-              : data.value === null
-                ? "null"
-                : data.value === undefined
-                  ? "undefined"
-                  : String(data.value)}
-          </div>
-        </CollapsibleCard>
-      </div>
+      <NodeTooltip data={data} type="rootNode">
+        <div className="w-[220px]">
+          <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} />
+          <CollapsibleCard
+            title="Root"
+            isOpen={true}
+            borderColor="border-blue-500"
+            onToggle={data.onToggle}
+            isExpanded={data.isExpanded}
+          >
+            <div className="text-xs">
+              {typeof data.value === "object" && data.value !== null
+                ? `Object with ${Object.keys(data.value).length} properties`
+                : data.value === null
+                  ? "null"
+                  : data.value === undefined
+                    ? "undefined"
+                    : String(data.value)}
+            </div>
+          </CollapsibleCard>
+        </div>
+      </NodeTooltip>
     </AnimatedNode>
   )
 }
@@ -64,27 +121,29 @@ function RootNode({ data, isConnectable }: any) {
 function JsonNode({ data, isConnectable }: any) {
   return (
     <AnimatedNode>
-      <div className="w-[220px]">
-        <Handle type="target" position={Position.Top} isConnectable={isConnectable} />
-        <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} />
-        <CollapsibleCard
-          title={data.label}
-          isOpen={true}
-          borderColor="border-purple-500"
-          onToggle={data.onToggle}
-          isExpanded={data.isExpanded}
-        >
-          <div className="text-xs">
-            {typeof data.value === "object" && data.value !== null
-              ? `Object with ${Object.keys(data.value).length} properties`
-              : data.value === null
-                ? "null"
-                : data.value === undefined
-                  ? "undefined"
-                  : String(data.value)}
-          </div>
-        </CollapsibleCard>
-      </div>
+      <NodeTooltip data={data} type="jsonNode">
+        <div className="w-[220px]">
+          <Handle type="target" position={Position.Top} isConnectable={isConnectable} />
+          <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} />
+          <CollapsibleCard
+            title={data.label}
+            isOpen={true}
+            borderColor="border-purple-500"
+            onToggle={data.onToggle}
+            isExpanded={data.isExpanded}
+          >
+            <div className="text-xs">
+              {typeof data.value === "object" && data.value !== null
+                ? `Object with ${Object.keys(data.value).length} properties`
+                : data.value === null
+                  ? "null"
+                  : data.value === undefined
+                    ? "undefined"
+                    : String(data.value)}
+            </div>
+          </CollapsibleCard>
+        </div>
+      </NodeTooltip>
     </AnimatedNode>
   )
 }
@@ -92,19 +151,21 @@ function JsonNode({ data, isConnectable }: any) {
 function ArrayNode({ data, isConnectable }: any) {
   return (
     <AnimatedNode>
-      <div className="w-[220px]">
-        <Handle type="target" position={Position.Top} isConnectable={isConnectable} />
-        <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} />
-        <CollapsibleCard
-          title={data.label}
-          isOpen={true}
-          borderColor="border-green-500"
-          onToggle={data.onToggle}
-          isExpanded={data.isExpanded}
-        >
-          <div className="text-xs">Array with {data.value.length} items</div>
-        </CollapsibleCard>
-      </div>
+      <NodeTooltip data={data} type="arrayNode">
+        <div className="w-[220px]">
+          <Handle type="target" position={Position.Top} isConnectable={isConnectable} />
+          <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} />
+          <CollapsibleCard
+            title={data.label}
+            isOpen={true}
+            borderColor="border-green-500"
+            onToggle={data.onToggle}
+            isExpanded={data.isExpanded}
+          >
+            <div className="text-xs">Array with {data.value.length} items</div>
+          </CollapsibleCard>
+        </div>
+      </NodeTooltip>
     </AnimatedNode>
   )
 }
@@ -112,14 +173,16 @@ function ArrayNode({ data, isConnectable }: any) {
 function ValueNode({ data, isConnectable }: any) {
   return (
     <AnimatedNode>
-      <div className="w-[220px]">
-        <Handle type="target" position={Position.Top} isConnectable={isConnectable} />
-        <CollapsibleCard title={data.label} isOpen={true} borderColor="border-amber-500">
-          <div className="text-xs break-all">
-            {data.value === null ? "null" : data.value === undefined ? "undefined" : String(data.value)}
-          </div>
-        </CollapsibleCard>
-      </div>
+      <NodeTooltip data={data} type="valueNode">
+        <div className="w-[220px]">
+          <Handle type="target" position={Position.Top} isConnectable={isConnectable} />
+          <CollapsibleCard title={data.label} isOpen={true} borderColor="border-amber-500">
+            <div className="text-xs break-all">
+              {data.value === null ? "null" : data.value === undefined ? "undefined" : String(data.value)}
+            </div>
+          </CollapsibleCard>
+        </div>
+      </NodeTooltip>
     </AnimatedNode>
   )
 }
@@ -165,7 +228,10 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = "TB") => 
 }
 
 // Main component
-export default function JsonTreeVisualization({ jsonData }: { jsonData: any }) {
+export default function JsonTreeVisualization({
+  jsonData,
+  viewMode = "advanced",
+}: { jsonData: any; viewMode?: ViewMode }) {
   const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({})
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
@@ -197,6 +263,11 @@ export default function JsonTreeVisualization({ jsonData }: { jsonData: any }) {
         value: jsonData,
         isExpanded: true,
         onToggle: () => toggleNodeExpansion(rootId),
+        path: "$",
+        metadata: {
+          type: typeof jsonData,
+          schemaVersion: jsonData?.schemaVersion || "N/A",
+        },
       },
     })
 
@@ -213,6 +284,10 @@ export default function JsonTreeVisualization({ jsonData }: { jsonData: any }) {
           const currentPath = path ? `${path}[${index}]` : `[${index}]`
           const isExpanded = expandedNodes[currentId] !== false
 
+          // Check if this node should be shown in normal mode
+          const shouldShow = viewMode === "advanced" || shouldShowInNormalMode(`[${index}]`, item, level)
+          if (!shouldShow) return
+
           if (typeof item === "object" && item !== null) {
             // Object or array inside array
             newNodes.push({
@@ -224,6 +299,11 @@ export default function JsonTreeVisualization({ jsonData }: { jsonData: any }) {
                 value: item,
                 isExpanded,
                 onToggle: () => toggleNodeExpansion(currentId),
+                path: currentPath,
+                metadata: {
+                  type: Array.isArray(item) ? "array" : "object",
+                  size: Array.isArray(item) ? item.length : Object.keys(item).length,
+                },
               },
             })
 
@@ -247,6 +327,10 @@ export default function JsonTreeVisualization({ jsonData }: { jsonData: any }) {
               data: {
                 label: `[${index}]`,
                 value: item,
+                path: currentPath,
+                metadata: {
+                  type: typeof item,
+                },
               },
             })
 
@@ -266,6 +350,10 @@ export default function JsonTreeVisualization({ jsonData }: { jsonData: any }) {
           const currentPath = path ? `${path}.${key}` : key
           const isExpanded = expandedNodes[currentId] !== false
 
+          // Check if this node should be shown in normal mode
+          const shouldShow = viewMode === "advanced" || shouldShowInNormalMode(key, value, level)
+          if (!shouldShow) return
+
           if (typeof value === "object" && value !== null) {
             // Nested object or array
             newNodes.push({
@@ -277,6 +365,12 @@ export default function JsonTreeVisualization({ jsonData }: { jsonData: any }) {
                 value,
                 isExpanded,
                 onToggle: () => toggleNodeExpansion(currentId),
+                path: currentPath,
+                metadata: {
+                  type: Array.isArray(value) ? "array" : "object",
+                  size: Array.isArray(value) ? value.length : Object.keys(value).length,
+                  ...(key === "schemaVersion" && { important: true }),
+                },
               },
             })
 
@@ -300,6 +394,12 @@ export default function JsonTreeVisualization({ jsonData }: { jsonData: any }) {
               data: {
                 label: key,
                 value,
+                path: currentPath,
+                metadata: {
+                  type: typeof value,
+                  ...(key === "schemaVersion" && { important: true }),
+                  ...(key === "expires" && { timeValue: true }),
+                },
               },
             })
 
@@ -316,7 +416,7 @@ export default function JsonTreeVisualization({ jsonData }: { jsonData: any }) {
     }
 
     // Start processing from root
-    processJson(rootId, jsonData)
+    processJson(rootId, jsonData, "$")
 
     // Apply layout
     const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
@@ -327,7 +427,7 @@ export default function JsonTreeVisualization({ jsonData }: { jsonData: any }) {
 
     setNodes(layoutedNodes)
     setEdges(layoutedEdges)
-  }, [jsonData, expandedNodes, toggleNodeExpansion])
+  }, [jsonData, expandedNodes, toggleNodeExpansion, viewMode])
 
   return (
     <ReactFlow

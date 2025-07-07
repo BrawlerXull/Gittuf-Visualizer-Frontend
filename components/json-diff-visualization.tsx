@@ -20,6 +20,9 @@ import dagre from "dagre"
 import { motion } from "framer-motion"
 import { CollapsibleCard } from "./collapsible-card"
 import { compareJsonObjects } from "@/lib/json-diff"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Badge } from "@/components/ui/badge"
+import { formatJsonValue, getNodeTypeDescription } from "@/lib/json-utils"
 
 // Node dimensions for layout
 const NODE_WIDTH = 220
@@ -34,30 +37,128 @@ const AnimatedNode = ({ children }: { children: React.ReactNode }) => {
   )
 }
 
+// Node tooltip wrapper
+const DiffNodeTooltip = ({ children, data, type }: { children: React.ReactNode; data: any; type: string }) => {
+  return (
+    <TooltipProvider>
+      <Tooltip delayDuration={300}>
+        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        <TooltipContent side="right" className="max-w-md p-0 overflow-hidden">
+          <div className="bg-white rounded-md shadow-lg border border-slate-200">
+            <div className="bg-slate-50 p-2 border-b border-slate-200">
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-sm text-slate-700">
+                  {data.label || (type === "diffRoot" ? "Root" : "Node")}
+                </span>
+                <Badge
+                  variant="outline"
+                  className={`text-xs ${
+                    type === "diffAdded"
+                      ? "bg-green-50 text-green-700"
+                      : type === "diffRemoved"
+                        ? "bg-red-50 text-red-700"
+                        : type === "diffChanged"
+                          ? "bg-amber-50 text-amber-700"
+                          : "bg-slate-100"
+                  }`}
+                >
+                  {getNodeTypeDescription(type)}
+                </Badge>
+              </div>
+            </div>
+            <div className="p-3 space-y-2">
+              {data.path && (
+                <div>
+                  <span className="text-xs font-medium text-slate-500">Path:</span>
+                  <code className="ml-2 text-xs bg-slate-50 px-1 py-0.5 rounded">{data.path}</code>
+                </div>
+              )}
+
+              {type === "diffChanged" ? (
+                <>
+                  <div>
+                    <span className="text-xs font-medium text-red-500">Old Value:</span>
+                    <div className="mt-1 text-xs bg-red-50 p-2 rounded border border-red-200 max-h-[100px] overflow-auto">
+                      <pre className="whitespace-pre-wrap break-all">{formatJsonValue(data.oldValue)}</pre>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-xs font-medium text-green-500">New Value:</span>
+                    <div className="mt-1 text-xs bg-green-50 p-2 rounded border border-green-200 max-h-[100px] overflow-auto">
+                      <pre className="whitespace-pre-wrap break-all">{formatJsonValue(data.newValue)}</pre>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <span className="text-xs font-medium text-slate-500">Value:</span>
+                  <div
+                    className={`mt-1 text-xs p-2 rounded border max-h-[200px] overflow-auto ${
+                      type === "diffAdded"
+                        ? "bg-green-50 border-green-200"
+                        : type === "diffRemoved"
+                          ? "bg-red-50 border-red-200"
+                          : "bg-slate-50 border-slate-200"
+                    }`}
+                  >
+                    <pre className="whitespace-pre-wrap break-all">{formatJsonValue(data.value)}</pre>
+                  </div>
+                </div>
+              )}
+
+              {data.metadata && Object.keys(data.metadata).length > 0 && (
+                <div>
+                  <span className="text-xs font-medium text-slate-500">Metadata:</span>
+                  <div className="mt-1 grid grid-cols-2 gap-1">
+                    {Object.entries(data.metadata).map(([key, value]) => (
+                      <div key={key} className="text-xs">
+                        <span className="font-medium">{key}:</span> {String(value)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {type === "diffChanged" && data.diffDetails && (
+                <div>
+                  <span className="text-xs font-medium text-slate-500">Change Details:</span>
+                  <div className="mt-1 text-xs bg-slate-50 p-2 rounded border border-slate-200">{data.diffDetails}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
 // Node types
 function DiffRootNode({ data, isConnectable }: any) {
   return (
     <AnimatedNode>
-      <div className="w-[220px]">
-        <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} />
-        <CollapsibleCard
-          title="Root"
-          isOpen={true}
-          borderColor="border-blue-500"
-          onToggle={data.onToggle}
-          isExpanded={data.isExpanded}
-        >
-          <div className="text-xs">
-            {typeof data.value === "object" && data.value !== null
-              ? `Object with ${Object.keys(data.value).length} properties`
-              : data.value === null
-                ? "null"
-                : data.value === undefined
-                  ? "undefined"
-                  : String(data.value)}
-          </div>
-        </CollapsibleCard>
-      </div>
+      <DiffNodeTooltip data={data} type="diffRoot">
+        <div className="w-[220px]">
+          <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} />
+          <CollapsibleCard
+            title="Root"
+            isOpen={true}
+            borderColor="border-blue-500"
+            onToggle={data.onToggle}
+            isExpanded={data.isExpanded}
+          >
+            <div className="text-xs">
+              {typeof data.value === "object" && data.value !== null
+                ? `Object with ${Object.keys(data.value).length} properties`
+                : data.value === null
+                  ? "null"
+                  : data.value === undefined
+                    ? "undefined"
+                    : String(data.value)}
+            </div>
+          </CollapsibleCard>
+        </div>
+      </DiffNodeTooltip>
     </AnimatedNode>
   )
 }
@@ -65,29 +166,31 @@ function DiffRootNode({ data, isConnectable }: any) {
 function DiffAddedNode({ data, isConnectable }: any) {
   return (
     <AnimatedNode>
-      <div className="w-[220px]">
-        <Handle type="target" position={Position.Top} isConnectable={isConnectable} />
-        <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} />
-        <CollapsibleCard
-          title={data.label}
-          isOpen={true}
-          borderColor="border-green-500"
-          onToggle={data.onToggle}
-          isExpanded={data.isExpanded}
-          badgeText="Added"
-          badgeColor="bg-green-100 text-green-800 border-green-200"
-        >
-          <div className="text-xs">
-            {typeof data.value === "object" && data.value !== null
-              ? `Object with ${Object.keys(data.value).length} properties`
-              : data.value === null
-                ? "null"
-                : data.value === undefined
-                  ? "undefined"
-                  : String(data.value)}
-          </div>
-        </CollapsibleCard>
-      </div>
+      <DiffNodeTooltip data={data} type="diffAdded">
+        <div className="w-[220px]">
+          <Handle type="target" position={Position.Top} isConnectable={isConnectable} />
+          <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} />
+          <CollapsibleCard
+            title={data.label}
+            isOpen={true}
+            borderColor="border-green-500"
+            onToggle={data.onToggle}
+            isExpanded={data.isExpanded}
+            badgeText="Added"
+            badgeColor="bg-green-100 text-green-800 border-green-200"
+          >
+            <div className="text-xs">
+              {typeof data.value === "object" && data.value !== null
+                ? `Object with ${Object.keys(data.value).length} properties`
+                : data.value === null
+                  ? "null"
+                  : data.value === undefined
+                    ? "undefined"
+                    : String(data.value)}
+            </div>
+          </CollapsibleCard>
+        </div>
+      </DiffNodeTooltip>
     </AnimatedNode>
   )
 }
@@ -95,29 +198,31 @@ function DiffAddedNode({ data, isConnectable }: any) {
 function DiffRemovedNode({ data, isConnectable }: any) {
   return (
     <AnimatedNode>
-      <div className="w-[220px]">
-        <Handle type="target" position={Position.Top} isConnectable={isConnectable} />
-        <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} />
-        <CollapsibleCard
-          title={data.label}
-          isOpen={true}
-          borderColor="border-red-500"
-          onToggle={data.onToggle}
-          isExpanded={data.isExpanded}
-          badgeText="Removed"
-          badgeColor="bg-red-100 text-red-800 border-red-200"
-        >
-          <div className="text-xs">
-            {typeof data.value === "object" && data.value !== null
-              ? `Object with ${Object.keys(data.value).length} properties`
-              : data.value === null
-                ? "null"
-                : data.value === undefined
-                  ? "undefined"
-                  : String(data.value)}
-          </div>
-        </CollapsibleCard>
-      </div>
+      <DiffNodeTooltip data={data} type="diffRemoved">
+        <div className="w-[220px]">
+          <Handle type="target" position={Position.Top} isConnectable={isConnectable} />
+          <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} />
+          <CollapsibleCard
+            title={data.label}
+            isOpen={true}
+            borderColor="border-red-500"
+            onToggle={data.onToggle}
+            isExpanded={data.isExpanded}
+            badgeText="Removed"
+            badgeColor="bg-red-100 text-red-800 border-red-200"
+          >
+            <div className="text-xs">
+              {typeof data.value === "object" && data.value !== null
+                ? `Object with ${Object.keys(data.value).length} properties`
+                : data.value === null
+                  ? "null"
+                  : data.value === undefined
+                    ? "undefined"
+                    : String(data.value)}
+            </div>
+          </CollapsibleCard>
+        </div>
+      </DiffNodeTooltip>
     </AnimatedNode>
   )
 }
@@ -125,24 +230,26 @@ function DiffRemovedNode({ data, isConnectable }: any) {
 function DiffChangedNode({ data, isConnectable }: any) {
   return (
     <AnimatedNode>
-      <div className="w-[220px]">
-        <Handle type="target" position={Position.Top} isConnectable={isConnectable} />
-        <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} />
-        <CollapsibleCard
-          title={data.label}
-          isOpen={true}
-          borderColor="border-amber-500"
-          onToggle={data.onToggle}
-          isExpanded={data.isExpanded}
-          badgeText="Changed"
-          badgeColor="bg-amber-100 text-amber-800 border-amber-200"
-        >
-          <div className="text-xs space-y-1">
-            <div className="bg-red-50 p-1 rounded border border-red-100 line-through">{String(data.oldValue)}</div>
-            <div className="bg-green-50 p-1 rounded border border-green-100">{String(data.newValue)}</div>
-          </div>
-        </CollapsibleCard>
-      </div>
+      <DiffNodeTooltip data={data} type="diffChanged">
+        <div className="w-[220px]">
+          <Handle type="target" position={Position.Top} isConnectable={isConnectable} />
+          <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} />
+          <CollapsibleCard
+            title={data.label}
+            isOpen={true}
+            borderColor="border-amber-500"
+            onToggle={data.onToggle}
+            isExpanded={data.isExpanded}
+            badgeText="Changed"
+            badgeColor="bg-amber-100 text-amber-800 border-amber-200"
+          >
+            <div className="text-xs space-y-1">
+              <div className="bg-red-50 p-1 rounded border border-red-100 line-through">{String(data.oldValue)}</div>
+              <div className="bg-green-50 p-1 rounded border border-green-100">{String(data.newValue)}</div>
+            </div>
+          </CollapsibleCard>
+        </div>
+      </DiffNodeTooltip>
     </AnimatedNode>
   )
 }
@@ -150,27 +257,29 @@ function DiffChangedNode({ data, isConnectable }: any) {
 function DiffUnchangedNode({ data, isConnectable }: any) {
   return (
     <AnimatedNode>
-      <div className="w-[220px]">
-        <Handle type="target" position={Position.Top} isConnectable={isConnectable} />
-        <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} />
-        <CollapsibleCard
-          title={data.label}
-          isOpen={true}
-          borderColor="border-slate-300"
-          onToggle={data.onToggle}
-          isExpanded={data.isExpanded}
-        >
-          <div className="text-xs">
-            {typeof data.value === "object" && data.value !== null
-              ? `Object with ${Object.keys(data.value).length} properties`
-              : data.value === null
-                ? "null"
-                : data.value === undefined
-                  ? "undefined"
-                  : String(data.value)}
-          </div>
-        </CollapsibleCard>
-      </div>
+      <DiffNodeTooltip data={data} type="diffUnchanged">
+        <div className="w-[220px]">
+          <Handle type="target" position={Position.Top} isConnectable={isConnectable} />
+          <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} />
+          <CollapsibleCard
+            title={data.label}
+            isOpen={true}
+            borderColor="border-slate-300"
+            onToggle={data.onToggle}
+            isExpanded={data.isExpanded}
+          >
+            <div className="text-xs">
+              {typeof data.value === "object" && data.value !== null
+                ? `Object with ${Object.keys(data.value).length} properties`
+                : data.value === null
+                  ? "null"
+                  : data.value === undefined
+                    ? "undefined"
+                    : String(data.value)}
+            </div>
+          </CollapsibleCard>
+        </div>
+      </DiffNodeTooltip>
     </AnimatedNode>
   )
 }
@@ -258,6 +367,11 @@ export default function JsonDiffVisualization({
           value: compareData,
           isExpanded: true,
           onToggle: () => toggleNodeExpansion(rootId),
+          path: "$",
+          metadata: {
+            type: typeof compareData,
+            schemaVersion: compareData?.schemaVersion || "N/A",
+          },
         },
       })
 
@@ -265,12 +379,12 @@ export default function JsonDiffVisualization({
       const diff = compareJsonObjects(baseData, compareData)
 
       // Process diff recursively
-      const processDiff = (parentId: string, diffObj: any, path = "", level = 1) => {
+      const processDiff = (parentId: string, diffObj: any, path = "$", level = 1) => {
         if (!diffObj) return
 
         Object.entries(diffObj).forEach(([key, value]: [string, any]) => {
           const currentId = `node-${nodeId++}`
-          const currentPath = path ? `${path}.${key}` : key
+          const currentPath = path === "$" ? `${path}.${key}` : `${path}.${key}`
           const isExpanded = expandedNodes[currentId] !== false
 
           if (value.status === "added") {
@@ -283,6 +397,16 @@ export default function JsonDiffVisualization({
                 value: value.value,
                 isExpanded,
                 onToggle: () => toggleNodeExpansion(currentId),
+                path: currentPath,
+                metadata: {
+                  type:
+                    typeof value.value === "object"
+                      ? Array.isArray(value.value)
+                        ? "array"
+                        : "object"
+                      : typeof value.value,
+                  addedAt: new Date().toISOString(),
+                },
               },
             })
 
@@ -310,6 +434,15 @@ export default function JsonDiffVisualization({
                       label: childKey,
                       value: childValue,
                       isExpanded: false,
+                      path: childPath,
+                      metadata: {
+                        type:
+                          typeof childValue === "object"
+                            ? Array.isArray(childValue)
+                              ? "array"
+                              : "object"
+                            : typeof childValue,
+                      },
                     },
                   })
 
@@ -339,6 +472,16 @@ export default function JsonDiffVisualization({
                 value: value.value,
                 isExpanded,
                 onToggle: () => toggleNodeExpansion(currentId),
+                path: currentPath,
+                metadata: {
+                  type:
+                    typeof value.value === "object"
+                      ? Array.isArray(value.value)
+                        ? "array"
+                        : "object"
+                      : typeof value.value,
+                  removedAt: new Date().toISOString(),
+                },
               },
             })
 
@@ -366,6 +509,15 @@ export default function JsonDiffVisualization({
                       label: childKey,
                       value: childValue,
                       isExpanded: false,
+                      path: childPath,
+                      metadata: {
+                        type:
+                          typeof childValue === "object"
+                            ? Array.isArray(childValue)
+                              ? "array"
+                              : "object"
+                            : typeof childValue,
+                      },
                     },
                   })
 
@@ -386,6 +538,16 @@ export default function JsonDiffVisualization({
               processRemovedObject(currentId, removedObj, currentPath, level + 1)
             }
           } else if (value.status === "changed") {
+            // Generate a human-readable description of the change
+            let diffDetails = "Value changed"
+            if (typeof value.oldValue === "string" && typeof value.value === "string") {
+              if (value.oldValue.length !== value.value.length) {
+                diffDetails = `Length changed from ${value.oldValue.length} to ${value.value.length} characters`
+              }
+            } else if (typeof value.oldValue !== typeof value.value) {
+              diffDetails = `Type changed from ${typeof value.oldValue} to ${typeof value.value}`
+            }
+
             newNodes.push({
               id: currentId,
               type: "diffChanged",
@@ -396,6 +558,13 @@ export default function JsonDiffVisualization({
                 newValue: value.value,
                 isExpanded,
                 onToggle: () => toggleNodeExpansion(currentId),
+                path: currentPath,
+                metadata: {
+                  oldType: typeof value.oldValue,
+                  newType: typeof value.value,
+                  changedAt: new Date().toISOString(),
+                },
+                diffDetails,
               },
             })
 
@@ -416,6 +585,15 @@ export default function JsonDiffVisualization({
                 value: value.value,
                 isExpanded,
                 onToggle: () => toggleNodeExpansion(currentId),
+                path: currentPath,
+                metadata: {
+                  type:
+                    typeof value.value === "object"
+                      ? Array.isArray(value.value)
+                        ? "array"
+                        : "object"
+                      : typeof value.value,
+                },
               },
             })
 
@@ -444,6 +622,16 @@ export default function JsonDiffVisualization({
                 value: value.value || {},
                 isExpanded,
                 onToggle: () => toggleNodeExpansion(currentId),
+                path: currentPath,
+                metadata: {
+                  type:
+                    typeof value.value === "object"
+                      ? Array.isArray(value.value)
+                        ? "array"
+                        : "object"
+                      : typeof value.value,
+                  hasNestedChanges: true,
+                },
               },
             })
 
@@ -465,7 +653,7 @@ export default function JsonDiffVisualization({
       }
 
       // Start processing from root
-      processDiff(rootId, diff, "")
+      processDiff(rootId, diff, "$")
 
       // Apply layout
       const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
