@@ -5,7 +5,6 @@ import { useState, useEffect } from "react"
 import dynamic from "next/dynamic"
 import { Loader2, Github, GitCommit, FileJson, GitCompare, BarChart3, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
@@ -20,6 +19,10 @@ import { mockFetchCommits, mockFetchMetadata } from "@/lib/mock-api"
 import type { Commit } from "@/lib/types"
 import JsonTreeView from "@/components/json-tree-view"
 import { getHiddenFieldsCount, type ViewMode } from "@/lib/view-mode-utils"
+
+import RepositoryStatus from "@/components/repository-status"
+import { RepositoryHandler, type RepositoryInfo } from "@/lib/repository-handler"
+import RepositorySelector from "@/components/repository-selector"
 
 // Dynamically import the JsonTreeVisualization component to avoid SSR issues with ReactFlow
 const JsonTreeVisualization = dynamic(() => import("@/components/json-tree-visualization"), {
@@ -63,6 +66,9 @@ export default function Home() {
   const [selectedCommits, setSelectedCommits] = useState<Commit[]>([])
   const [globalViewMode, setGlobalViewMode] = useState<ViewMode>("normal")
   const [currentStep, setCurrentStep] = useState(0)
+  const [repositoryHandler] = useState(() => new RepositoryHandler())
+  const [currentRepository, setCurrentRepository] = useState<RepositoryInfo | null>(null)
+  const [showRepositorySelector, setShowRepositorySelector] = useState(true)
 
   const steps = ["Repository", "Commits", "Visualization", "Analysis"]
 
@@ -85,6 +91,48 @@ export default function Home() {
       setCurrentStep(2)
     } catch (err) {
       setError("Failed to load demo data. Please try again.")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleRepositorySelect = async (repoInfo: RepositoryInfo) => {
+    setCurrentRepository(repoInfo)
+    setCurrentStep(1)
+    setIsLoading(true)
+    setError("")
+
+    try {
+      await repositoryHandler.setRepository(repoInfo)
+      const commitsData = await repositoryHandler.fetchCommits()
+      setCommits(commitsData)
+      setSelectedCommit(null)
+      setCompareCommits({ base: null, compare: null })
+      setJsonData(null)
+      setCompareData({ base: null, compare: null })
+      setSelectedCommits([])
+      setActiveTab("commits")
+      setCurrentStep(2)
+      setShowRepositorySelector(false)
+    } catch (err) {
+      setError(`Failed to connect to repository: ${err instanceof Error ? err.message : "Unknown error"}`)
+      setCurrentStep(0)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleRepositoryRefresh = async () => {
+    if (!currentRepository) return
+
+    setIsLoading(true)
+    setError("")
+
+    try {
+      const commitsData = await repositoryHandler.fetchCommits()
+      setCommits(commitsData)
+    } catch (err) {
+      setError(`Failed to refresh repository data: ${err instanceof Error ? err.message : "Unknown error"}`)
     } finally {
       setIsLoading(false)
     }
@@ -125,12 +173,18 @@ export default function Home() {
     setIsLoading(true)
     setActiveTab("visualization")
     setCurrentStep(3)
+    setError("")
 
     try {
-      const metadata = await mockFetchMetadata(repoUrl, commit.hash, selectedFile)
+      // Use the mock API directly with proper fallback URL
+      const fallbackUrl = currentRepository?.path || repoUrl || "https://github.com/gittuf/gittuf"
+      const metadata = await mockFetchMetadata(fallbackUrl, commit.hash, selectedFile)
       setJsonData(metadata)
     } catch (err) {
-      setError(`Failed to fetch ${selectedFile} for this commit.`)
+      console.error("Failed to fetch metadata:", err)
+      setError(
+        `Failed to fetch ${selectedFile} for this commit: ${err instanceof Error ? err.message : "Unknown error"}`,
+      )
     } finally {
       setIsLoading(false)
     }
@@ -141,16 +195,19 @@ export default function Home() {
     setIsLoading(true)
     setActiveTab("compare")
     setCurrentStep(3)
+    setError("")
 
     try {
+      const fallbackUrl = currentRepository?.path || repoUrl || "https://github.com/gittuf/gittuf"
       const [baseData, compareData] = await Promise.all([
-        mockFetchMetadata(repoUrl, base.hash, selectedFile),
-        mockFetchMetadata(repoUrl, compare.hash, selectedFile),
+        mockFetchMetadata(fallbackUrl, base.hash, selectedFile),
+        mockFetchMetadata(fallbackUrl, compare.hash, selectedFile),
       ])
 
       setCompareData({ base: baseData, compare: compareData })
     } catch (err) {
-      setError(`Failed to fetch comparison data.`)
+      console.error("Failed to fetch comparison data:", err)
+      setError(`Failed to fetch comparison data: ${err instanceof Error ? err.message : "Unknown error"}`)
     } finally {
       setIsLoading(false)
     }
@@ -161,11 +218,14 @@ export default function Home() {
 
     if (selectedCommit && (activeTab === "visualization" || activeTab === "tree")) {
       setIsLoading(true)
+      setError("")
       try {
-        const metadata = await mockFetchMetadata(repoUrl, selectedCommit.hash, file)
+        const fallbackUrl = currentRepository?.path || repoUrl || "https://github.com/gittuf/gittuf"
+        const metadata = await mockFetchMetadata(fallbackUrl, selectedCommit.hash, file)
         setJsonData(metadata)
       } catch (err) {
-        setError(`Failed to fetch ${file} for this commit.`)
+        console.error("Failed to fetch file data:", err)
+        setError(`Failed to fetch ${file} for this commit: ${err instanceof Error ? err.message : "Unknown error"}`)
       } finally {
         setIsLoading(false)
       }
@@ -173,15 +233,18 @@ export default function Home() {
 
     if (compareCommits.base && compareCommits.compare && activeTab === "compare") {
       setIsLoading(true)
+      setError("")
       try {
+        const fallbackUrl = currentRepository?.path || repoUrl || "https://github.com/gittuf/gittuf"
         const [baseData, compareData] = await Promise.all([
-          mockFetchMetadata(repoUrl, compareCommits.base.hash, file),
-          mockFetchMetadata(repoUrl, compareCommits.compare.hash, file),
+          mockFetchMetadata(fallbackUrl, compareCommits.base.hash, file),
+          mockFetchMetadata(fallbackUrl, compareCommits.compare.hash, file),
         ])
 
         setCompareData({ base: baseData, compare: compareData })
       } catch (err) {
-        setError(`Failed to fetch comparison data.`)
+        console.error("Failed to fetch file comparison data:", err)
+        setError(`Failed to fetch comparison data: ${err instanceof Error ? err.message : "Unknown error"}`)
       } finally {
         setIsLoading(false)
       }
@@ -201,7 +264,10 @@ export default function Home() {
         setError("")
 
         try {
-          const dataPromises = selectedCommits.map((commit) => mockFetchMetadata(repoUrl, commit.hash, selectedFile))
+          const fallbackUrl = currentRepository?.path || repoUrl || "https://github.com/gittuf/gittuf"
+          const dataPromises = selectedCommits.map((commit) =>
+            mockFetchMetadata(fallbackUrl, commit.hash, selectedFile),
+          )
           const results = await Promise.all(dataPromises)
           const commitsWithData = selectedCommits.map((commit, index) => ({
             ...commit,
@@ -219,7 +285,7 @@ export default function Home() {
 
       loadAnalysisData()
     }
-  }, [activeTab, selectedCommits.length, repoUrl, selectedFile])
+  }, [activeTab, selectedCommits.length, selectedFile, currentRepository, repoUrl])
 
   const hiddenCount = globalViewMode === "normal" && jsonData ? getHiddenFieldsCount(jsonData) : 0
 
@@ -239,6 +305,16 @@ export default function Home() {
                 <p className="text-slate-600">Interactive tool to understand Git repository security metadata</p>
               </div>
             </div>
+            {currentRepository && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowRepositorySelector(!showRepositorySelector)}
+                className="ml-4"
+              >
+                {showRepositorySelector ? "Hide" : "Change"} Repository
+              </Button>
+            )}
           </div>
 
           {commits.length > 0 && <ProgressIndicator currentStep={currentStep} steps={steps} />}
@@ -246,55 +322,23 @@ export default function Home() {
 
         <QuickStartGuide />
 
-        <form onSubmit={handleRepoSubmit} className="mb-8">
-          <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-lg">
-            <CardContent className="p-6">
-              <div className="flex flex-col space-y-4">
-                <div className="flex items-center space-x-2 mb-2">
-                  <Github className="h-5 w-5 text-slate-600" />
-                  <h3 className="font-medium text-slate-800">Step 1: Enter Repository URL</h3>
-                </div>
-                <div className="flex flex-col md:flex-row gap-3">
-                  <Input
-                    type="text"
-                    placeholder="Enter GitHub repository URL with gittuf metadata (e.g., https://github.com/gittuf/gittuf)"
-                    value={repoUrl}
-                    onChange={(e) => setRepoUrl(e.target.value)}
-                    className="flex-grow text-sm"
-                  />
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={handleTryDemo}
-                      className="min-w-[120px] border-blue-200 text-blue-700 hover:bg-blue-50"
-                    >
-                      <Sparkles className="h-4 w-4 mr-2" />
-                      Try Demo
-                    </Button>
-                    <Button
-                      type="submit"
-                      disabled={isLoading}
-                      className="min-w-[120px] bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
-                    >
-                      {isLoading ? (
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      ) : (
-                        <Github className="h-4 w-4 mr-2" />
-                      )}
-                      Analyze Repository
-                    </Button>
-                  </div>
-                </div>
-                {error && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-                    <p className="text-red-700 text-sm">{error}</p>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </form>
+        {showRepositorySelector && (
+          <RepositorySelector
+            onRepositorySelect={handleRepositorySelect}
+            isLoading={isLoading}
+            error={error}
+            currentRepository={currentRepository}
+          />
+        )}
+
+        {currentRepository && !showRepositorySelector && (
+          <RepositoryStatus
+            repository={currentRepository}
+            commits={commits}
+            onRefresh={handleRepositoryRefresh}
+            isLoading={isLoading}
+          />
+        )}
 
         {commits.length > 0 && (
           <>
@@ -462,7 +506,20 @@ export default function Home() {
                       <Loader2 className="h-8 w-8 animate-spin text-green-500" />
                       <span className="ml-2">Loading security metadata visualization...</span>
                     </div>
-                  ) : jsonData ? (
+                  ) : error ? (
+                    <div className="flex flex-col items-center justify-center h-full text-red-500 p-4">
+                      <FileJson className="h-16 w-16 mb-4 text-red-400" />
+                      <p className="text-lg font-medium mb-2">Error Loading Visualization</p>
+                      <p className="text-center max-w-md mb-4 text-sm">{error}</p>
+                      <Button
+                        variant="outline"
+                        onClick={() => selectedCommit && handleCommitSelect(selectedCommit)}
+                        className="bg-transparent"
+                      >
+                        Try Again
+                      </Button>
+                    </div>
+                  ) : jsonData && selectedCommit ? (
                     <JsonTreeVisualization jsonData={jsonData} viewMode={globalViewMode} />
                   ) : (
                     <div className="flex flex-col items-center justify-center h-full text-slate-500">
@@ -513,7 +570,20 @@ export default function Home() {
                       <Loader2 className="h-8 w-8 animate-spin text-purple-500" />
                       <span className="ml-2">Loading tree structure...</span>
                     </div>
-                  ) : jsonData ? (
+                  ) : error ? (
+                    <div className="flex flex-col items-center justify-center h-[600px] text-red-500 p-4">
+                      <FileJson className="h-16 w-16 mb-4 text-red-400" />
+                      <p className="text-lg font-medium mb-2">Error Loading Tree View</p>
+                      <p className="text-center max-w-md mb-4 text-sm">{error}</p>
+                      <Button
+                        variant="outline"
+                        onClick={() => selectedCommit && handleCommitSelect(selectedCommit)}
+                        className="bg-transparent"
+                      >
+                        Try Again
+                      </Button>
+                    </div>
+                  ) : jsonData && selectedCommit ? (
                     <JsonTreeView jsonData={jsonData} viewMode={globalViewMode} />
                   ) : (
                     <div className="flex flex-col items-center justify-center h-[600px] text-slate-500">
