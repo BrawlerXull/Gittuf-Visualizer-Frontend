@@ -328,7 +328,7 @@ export default function RepositorySelector({
 
                 <div className="space-y-3">
                   <div className="flex items-center gap-3">
-                    <Button
+                    {/* <Button
                       onClick={handleLocalSelect}
                       disabled={isLoading}
                       className="min-w-[140px] bg-transparent"
@@ -340,7 +340,66 @@ export default function RepositorySelector({
                         <Folder className="h-4 w-4 mr-2" />
                       )}
                       Select Folder
-                    </Button>
+                    </Button> */}
+                    <form
+  onSubmit={(e) => {
+    e.preventDefault()
+
+    if (!localPath.trim()) {
+      setValidationStatus({
+        isValid: false,
+        message: "Please enter a local repository path",
+      })
+      return
+    }
+
+    // Very basic validation – you can expand this as needed
+    const isGitRepo = true // Optionally, check for .git folder existence via IPC/electron/native bridge in a real app
+
+    setValidationStatus({
+      isValid: true,
+      message: isGitRepo
+        ? "Local repository path accepted"
+        : "Path entered (Git repo not verified, but accepted)",
+      details: {
+        type: "local",
+        path: localPath,
+        isGitRepo,
+      },
+    })
+
+    const repoInfo: RepositoryInfo = {
+      type: "local",
+      path: localPath,
+      name: localPath.split("/").pop() || "Local Repo",
+    }
+
+    onRepositorySelect(repoInfo)
+  }}
+  className="space-y-3 w-full"
+>
+  <div className="flex gap-2">
+    <Input
+      type="text"
+      placeholder="/path/to/local/repo"
+      value={localPath}
+      onChange={(e) => setLocalPath(e.target.value)}
+      disabled={isLoading}
+      className="flex-grow"
+    />
+    <Button type="submit" disabled={isLoading || !localPath.trim()} className="min-w-[100px]">
+      {isLoading ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : (
+        <>
+          <HardDrive className="h-4 w-4 mr-2" />
+          Connect
+        </>
+      )}
+    </Button>
+  </div>
+</form>
+
                     {localPath && (
                       <div className="flex-1">
                         <p className="text-sm font-medium text-slate-800">Selected:</p>
